@@ -57,7 +57,7 @@ class Arena:
                 except (ValueError, KeyError):
                     pass
 
-    def cached(self, key, fn, ttl=3):
+    def cached(self, key, fn, ttl=5):
         hit = self._cache.get(key)
         if hit and time.time() - hit[0] < ttl:
             return hit[1]
@@ -234,7 +234,11 @@ def make_handler(arena):
                 return self.send(400, {"error": "say something (up to 1500 characters)"})
             if not arena.allow_hit(self.ip()):
                 return self.send(429, {"error": "slow down: 10 messages a minute"})
-            self.send(200, arena.chat(session, handle, account, message))
+            try:
+                self.send(200, arena.chat(session, handle, account, message))
+            except Exception as e:  # the chain or the model hiccuped; say so instead of dropping the request
+                print("chat failed: %s" % e, flush=True)
+                self.send(503, {"error": "NEAR testnet is busy right now. Give it a few seconds and try again."})
 
     return Handler
 

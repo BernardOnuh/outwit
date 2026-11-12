@@ -2,10 +2,10 @@
 // ed25519 in its standard library. Reads a JSON request on stdin, so keys
 // never show up in the process list, and prints a JSON result on stdout:
 //
-//   {"rpc", "account", "key", "contract", "method", "args", "gas"?, "deposit"?}
+//   {"rpc", "rpcs"?, "account", "key", "contract", "method", "args", "gas"?, "deposit"?}
 //   -> {"ok": true, "tx": "<hash>", "result": <return value>, "logs": [...]}
 //   -> {"ok": false, "error": "<message>", "tx"?: "<hash>"}
-import { Account, JsonRpcProvider, KeyPairSigner } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPairSigner } from "near-api-js";
 
 const TGAS = 10n ** 12n;
 
@@ -37,7 +37,9 @@ function failure(status) {
 
 async function main() {
   const req = await readStdin();
-  const provider = new JsonRpcProvider({ url: req.rpc });
+  // Start with the endpoint the caller last found healthy; fail over to the others.
+  const urls = [req.rpc, ...(req.rpcs || []).filter((u) => u !== req.rpc)];
+  const provider = new FailoverRpcProvider(urls.map((url) => new JsonRpcProvider({ url }, { retries: 3, wait: 500, backoff: 2 })));
   const account = new Account(req.account, provider, KeyPairSigner.fromSecretKey(req.key));
   let out;
   try {

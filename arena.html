@@ -30,14 +30,38 @@
   .mono { font-family: var(--mono); }
   .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
 
-  /* ---------- top bar ---------- */
-  nav { display: flex; align-items: center; gap: 12px; padding: 18px 0; }
-  .logo { font-weight: 700; font-size: 22px; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; }
+  /* ---------- navbar ---------- */
+  .topnav { position: sticky; top: 0; z-index: 40; background: rgba(7,6,13,.78); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+  .navrow { display: flex; align-items: center; gap: 14px; height: 62px; }
+  .logo { font-weight: 700; font-size: 21px; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; color: var(--ink); text-decoration: none; }
   .logo i { font-style: normal; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--grad); font-size: 16px; }
-  .pill { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--card); }
+  .pill { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--card); white-space: nowrap; }
   .pill.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; box-shadow: 0 0 10px var(--ok); animation: blink 1.6s infinite; }
-  nav .spacer { flex: 1; }
-  nav a.gh { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 14px; }
+  .links { display: flex; gap: 4px; margin-left: 10px; }
+  .links a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 12px; border-radius: 10px; }
+  .links a:hover, .links a.on { color: var(--ink); background: var(--card2); }
+  .navrow .spacer { flex: 1; }
+  .navcta { display: inline-flex; align-items: center; gap: 6px; background: var(--lime); color: #0b0b0b; font-weight: 700; font-size: 14px; text-decoration: none; padding: 9px 16px; border-radius: 12px; white-space: nowrap; box-shadow: 0 8px 30px -10px rgba(182,255,59,.7); }
+  .navcta.on { background: var(--ink); }
+  .burger { display: none; width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); cursor: pointer; padding: 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+  .burger i { display: block; width: 18px; height: 2px; border-radius: 2px; background: var(--ink); transition: transform .2s, opacity .2s; }
+  .topnav.open .burger i:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .topnav.open .burger i:nth-child(2) { opacity: 0; }
+  .topnav.open .burger i:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  /* ---------- views ---------- */
+  .view[hidden] { display: none !important; }
+  .playblock { padding-top: 28px; }
+  .playhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .minipot { font-size: 14px; color: var(--muted); background: var(--card); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
+  .minipot b { color: var(--lime); }
+  .tabs { display: none; }
+  .whobox { border-bottom: 1px solid var(--line); }
+  .whobox summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 11px 18px; font-size: 13.5px; color: var(--muted); }
+  .whobox summary::-webkit-details-marker { display: none; }
+  .whobox summary b { color: var(--ink); font-weight: 600; }
+  .whobox[open] .chev { transform: rotate(180deg); }
+  .whobox .who { border-bottom: 0; padding-top: 0; }
 
   /* ---------- ticker ---------- */
   .ticker { border-block: 1px solid var(--line); background: rgba(255,255,255,.025); overflow: hidden; white-space: nowrap; }
@@ -194,21 +218,75 @@
     .bar { grid-template-columns: 110px 1fr 24px; } .lede { font-size: 16px; }
     nav .pill:not(.live) { display: none; }
   }
+  @media (max-width: 860px) {
+    .links { display: none; position: absolute; top: 62px; left: 0; right: 0; flex-direction: column; gap: 2px; margin: 0;
+             padding: 10px 16px 16px; background: rgba(10,9,20,.97); border-bottom: 1px solid var(--line); }
+    .topnav.open .links { display: flex; }
+    .links a { padding: 13px 12px; font-size: 16px; }
+    .burger { display: inline-flex; }
+    .navrow .pill.live { display: none; }
+    .navcta { padding: 9px 13px; }
+
+    /* the game is its own full-screen page, with tabs instead of scrolling */
+    .playblock { padding: 12px 0 0; }
+    .playhead .h2 { font-size: 22px; }
+    .playsub { display: none; }
+    .tabs { display: flex; gap: 6px; margin: 10px 0; overflow-x: auto; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tabs button { flex: 1 0 auto; font: 600 14px var(--display); color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+    .tabs button.active { color: #0b0b0b; background: var(--lime); border-color: var(--lime); }
+    .badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; line-height: 18px; }
+    .badge:empty { display: none; }
+    .game { display: block; }
+    .tabpanel:not(.active) { display: none; }
+    .side { display: block; }
+    .side .panel + .panel { margin-top: 12px; }
+    .chat { height: calc(100dvh - 62px - 110px); min-height: 460px; border-radius: 18px; }
+    .chat .panel-h { padding: 10px 14px; }
+    .chat .meta { max-width: 45%; font-size: 11px; }
+    .chips { padding: 8px 14px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { white-space: nowrap; }
+    .who { grid-template-columns: 1fr; }
+    .log { padding: 12px; }
+    .msg { max-width: 92%; }
+    .compose { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
+    .codes-l { display: none; }
+    .codes { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
+    .codes::-webkit-scrollbar { display: none; }
+    .codes button { white-space: nowrap; flex: 0 0 auto; }
+    textarea { height: 46px; font-size: 16px; }
+    input { font-size: 16px; }
+    .feed { max-height: none; }
+    #view-play footer { display: none; }
+  }
+  @media (max-width: 380px) {
+    .navcta span { display: none; }
+    .logo { font-size: 19px; }
+  }
+
 </style>
 </head>
 <body>
 <canvas id="confetti"></canvas>
 
-<div class="wrap">
-  <nav>
-    <div class="logo"><i>🛡️</i>Outwit</div>
+<header class="topnav" id="topnav">
+  <div class="wrap navrow">
+    <a class="logo" href="#/" data-go="home"><i>🛡️</i>Outwit</a>
     <span class="pill live" id="netpill">live on NEAR</span>
-    <span class="pill">AI security</span>
+    <nav class="links" id="links">
+      <a href="#/" data-go="home">Home</a>
+      <a href="#/how" data-go="how">How it works</a>
+      <a href="#/plug" data-go="plug">Plug in</a>
+      <a href="https://github.com/BernardOnuh/outwit" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
     <span class="spacer"></span>
-    <a class="gh" href="https://github.com/BernardOnuh/outwit" target="_blank" rel="noopener">GitHub ↗</a>
-  </nav>
-</div>
+    <a class="navcta" href="#/play" data-go="play">🎮 <span>Rob the agent</span></a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><i></i><i></i><i></i></button>
+  </div>
+</header>
 
+<main id="view-home" class="view">
 <div class="ticker" aria-hidden="true"><div class="ticker-track" id="ticker"></div></div>
 
 <div class="wrap">
@@ -218,8 +296,8 @@
       <h1>Your AI agent pays.<br><span class="g">Outwit checks first.</span></h1>
       <p class="lede">AI agents can be sweet-talked, guilt-tripped and prompt-injected into sending money. <b>Plug Outwit into your agent</b> and every payment it wants to make is vetted before a single coin moves: real payee? real invoice? someone pulling a trick? The verdict and the reason land on NEAR.</p>
       <div class="ctas">
-        <a class="btn go" href="#play">🎮 Try to rob our agent</a>
-        <a class="btn" href="#plug">🔌 Plug it into yours</a>
+        <a class="btn go" href="#/play" data-go="play">🎮 Try to rob our agent</a>
+        <a class="btn" href="#/plug" data-go="plug">🔌 Plug it into yours</a>
       </div>
     </div>
     <div class="vaultcard">
@@ -277,20 +355,41 @@
     </div>
   </section>
 
-  <section class="block" id="play">
-    <h2 class="h2">Try to rob our agent. 🎯</h2>
-    <p class="h2-sub">Keeper is a real AI agent plugged into Outwit, holding a real NEAR vault. Lie, beg, pretend to be a vendor. If anything reaches your account, it's yours. Every attempt is decided on-chain.</p>
+  <footer>
+    <span>🛡️ Outwit · built at NEAR HACKATHON 2026 · Track 06: AI Security & Defense</span>
+    <a href="https://github.com/BernardOnuh/outwit" target="_blank" rel="noopener">Open source on GitHub</a>
+  </footer>
+</div>
+</main>
+
+<main id="view-play" class="view" hidden>
+<div class="wrap">
+  <section class="block playblock" id="play">
+    <div class="playhead">
+      <h2 class="h2">Try to rob our agent. 🎯</h2>
+      <div class="minipot">💰 <b id="pot2">…</b> NEAR in the vault</div>
+    </div>
+    <p class="h2-sub playsub">Keeper is a real AI agent plugged into Outwit, holding a real NEAR vault. Lie, beg, pretend to be a vendor. If anything reaches your account, it's yours. Every attempt is decided on-chain.</p>
+    <div class="tabs" id="tabs" role="tablist">
+      <button class="active" data-tab="chat">💬 Chat</button>
+      <button data-tab="feed">🔴 Live <span class="badge" id="feedcount"></span></button>
+      <button data-tab="board">🏆 Fame</button>
+      <button data-tab="rules">📜 Rules</button>
+    </div>
     <div class="game">
-      <section class="panel chat">
+      <section class="panel chat tabpanel active" data-panel="chat">
         <div class="panel-h">
           <div class="keeper"><div class="avatar">🤖</div><div><div class="name">Keeper</div><div class="role">AI treasurer of <span id="dao">a DAO</span></div></div></div>
           <div class="meta" id="model"></div>
         </div>
         <div class="chips" id="status"></div>
-        <div class="who">
-          <input id="handle" maxlength="24" placeholder="Hacker name 😎" autocomplete="off">
-          <input id="account" maxlength="64" placeholder="Your NEAR account for the loot (you.testnet)" autocomplete="off" spellcheck="false">
-        </div>
+        <details class="whobox" id="whobox">
+          <summary><span>😎 <b id="whosum">Set your hacker name &amp; payout account</b></span><span class="chev">▾</span></summary>
+          <div class="who">
+            <input id="handle" maxlength="24" placeholder="Hacker name" autocomplete="off">
+            <input id="account" maxlength="64" placeholder="Your NEAR account for the loot (you.testnet)" autocomplete="off" spellcheck="false" autocapitalize="off">
+          </div>
+        </details>
         <div class="log" id="log">
           <div class="msg bot">Hey! I'm Keeper 🤖 I pay the DAO's payees for the invoices they raise on-chain. Every payment I make goes through Outwit. What can I do for you?</div>
         </div>
@@ -305,19 +404,19 @@
       </section>
 
       <aside class="side">
-        <section class="panel">
+        <section class="panel tabpanel" data-panel="feed">
           <div class="panel-h"><h3>🔴 Live on-chain verdicts</h3><span class="meta">every proposal, newest first</span></div>
           <div class="feed" id="feed"></div>
         </section>
-        <section class="panel">
+        <section class="panel tabpanel" data-panel="board">
           <div class="panel-h"><h3>🏆 Hall of Fame</h3><span class="meta">breaches, then creativity</span></div>
           <div id="board"></div>
         </section>
-        <section class="panel">
+        <section class="panel tabpanel" data-panel="board">
           <div class="panel-h"><h3>🧠 Most-tried tricks</h3></div>
           <div class="bars" id="techniques"></div>
         </section>
-        <section class="panel">
+        <section class="panel tabpanel" data-panel="rules">
           <div class="panel-h"><h3>📜 Rules</h3></div>
           <div class="rules">
             <ol>
@@ -332,15 +431,43 @@
     </div>
   </section>
 
-  <footer>
-    <span>🛡️ Outwit · built at NEAR HACKATHON 2026 · Track 06: AI Security & Defense</span>
-    <a href="https://github.com/BernardOnuh/outwit" target="_blank" rel="noopener">Open source on GitHub</a>
-  </footer>
 </div>
+</main>
 
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// ----- pages: #/ (home, with #/how and #/plug sections) and #/play (the game) -----
+function route() {
+  const h = location.hash.replace(/^#\/?/, "") || "home";
+  const play = h === "play";
+  $("view-home").hidden = play;
+  $("view-play").hidden = !play;
+  document.querySelectorAll("[data-go]").forEach(a => a.classList.toggle("on", a.dataset.go === (play ? "play" : h)));
+  $("topnav").classList.remove("open");
+  $("burger").setAttribute("aria-expanded", "false");
+  if (play) { window.scrollTo(0, 0); return; }
+  const target = document.getElementById(h);
+  if (target && h !== "home") setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  else window.scrollTo(0, 0);
+}
+addEventListener("hashchange", route);
+$("burger").addEventListener("click", () => {
+  const open = $("topnav").classList.toggle("open");
+  $("burger").setAttribute("aria-expanded", String(open));
+});
+
+// ----- game tabs (phones) -----
+let tab = "chat", seenFeed = -1;
+function showTab(name) {
+  tab = name;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tabpanel").forEach(p => p.classList.toggle("active", p.dataset.panel === name));
+  if (name === "feed" && latest && latest.feed.length) { seenFeed = latest.feed[0].id; $("feedcount").textContent = ""; }
+  if (name === "chat") $("log").scrollTop = $("log").scrollHeight;
+}
+$("tabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
+
 const YOCTO = 10n ** 24n;
 function near(y, digits) {
   let v; try { v = BigInt(y || 0); } catch (e) { return "0"; }
@@ -371,7 +498,13 @@ try { session = sessionStorage.getItem("arena-session") || ""; } catch (e) {}
 if (!session) { session = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join(""); }
 try { sessionStorage.setItem("arena-session", session); } catch (e) {}
 try { $("handle").value = localStorage.getItem("arena-handle") || ""; $("account").value = localStorage.getItem("arena-account") || ""; } catch (e) {}
-["handle", "account"].forEach(id => $(id).addEventListener("change", () => { try { localStorage.setItem("arena-" + id, $(id).value.trim()); } catch (e) {} }));
+function whoSummary() {
+  const h = $("handle").value.trim(), a = $("account").value.trim();
+  $("whosum").textContent = h || a ? (h || "anon") + (a ? " · " + a : " · no payout account") : "Set your hacker name & payout account";
+}
+["handle", "account"].forEach(id => $(id).addEventListener("change", () => { try { localStorage.setItem("arena-" + id, $(id).value.trim()); } catch (e) {} whoSummary(); }));
+whoSummary();
+if (!$("handle").value && innerWidth > 860) $("whobox").open = true;
 
 $("ideas").innerHTML = IDEAS.map((x, i) => '<button type="button" data-i="' + i + '">' + esc(x[0]) + "</button>").join("");
 $("ideas").addEventListener("click", e => {
@@ -462,6 +595,10 @@ async function tick() {
   latest = s;
   $("dao").textContent = s.dao;
   $("pot").textContent = near(s.balance, 2);
+  $("pot2").textContent = near(s.balance, 2);
+  if (seenFeed < 0 && s.feed.length) seenFeed = s.feed[0].id;
+  const fresh = s.feed.filter(a => a.id > seenFeed).length;
+  $("feedcount").textContent = tab !== "feed" && fresh ? fresh : "";
   $("netpill").textContent = "live on NEAR testnet";
   $("guard-id").textContent = s.guard;
   $("vault").innerHTML = "Vault " + link(s.vault_url, '<span class="mono">' + esc(s.vault) + "</span> ↗") +
@@ -496,7 +633,7 @@ async function tick() {
   $("payees").innerHTML = "<b>Approved payees:</b> " + s.payees.map(p => '<span class="mono">' + esc(p.account_id) + "</span> (" + esc(p.label) + ")").join(", ") +
     "<br><b>Open invoices (raised on-chain):</b> " + (s.invoices.map(i => "#" + i.id + " · " + near(i.amount) + " NEAR · " + esc(i.memo)).join(", ") || "none");
 }
-tick(); setInterval(tick, 3000);
+route(); tick(); setInterval(tick, 4000);
 </script>
 </body>
 </html>

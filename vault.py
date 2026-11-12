@@ -9,9 +9,12 @@ Writes return the bridge's shape: {"ok", "tx", "result", "logs"} or {"ok": False
 """
 import base64
 import json
+import os
 import secrets
 import subprocess
+import threading
 import time
+import urllib.error
 import urllib.request
 from decimal import Decimal
 from pathlib import Path
@@ -33,17 +36,38 @@ def fmt_near(yocto):
     return "%s NEAR" % ("{:f}".format(near) if near else "0")
 
 
+DEFAULT_RPCS = ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org", "https://near-testnet.drpc.org"]
+
+
 class Chain:
-    def __init__(self, rpc="https://test.rpc.fastnear.com", explorer="https://testnet.nearblocks.io"):
-        self.rpc = rpc
+    """NEAR RPC with failover: a busy (429) or broken endpoint hands over to the next one."""
+
+    def __init__(self, rpc=None, explorer="https://testnet.nearblocks.io", rpcs=None):
+        env = [u.strip() for u in os.environ.get("NEAR_RPCS", "").split(",") if u.strip()]
+        self.rpcs = env or rpcs or ([rpc] if rpc else []) + [u for u in DEFAULT_RPCS if u != rpc]
+        self.rpc = self.rpcs[0]
         self.explorer = explorer
+        self._lock = threading.Lock()
+
+    def _post(self, body):
+        last = None
+        for attempt in range(len(self.rpcs) * 2):
+            url = self.rpc
+            req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json", "User-Agent": "outwit/0.1"})
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return json.loads(r.read())
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                last = e
+                with self._lock:  # move on to the next endpoint, unless another thread already did
+                    if self.rpc == url:
+                        self.rpc = self.rpcs[(self.rpcs.index(url) + 1) % len(self.rpcs)]
+                time.sleep(min(2.0, 0.25 * (attempt + 1)))
+        raise RuntimeError("NEAR RPC unavailable: %s" % last)
 
     def _query(self, params):
-        body = {"jsonrpc": "2.0", "id": "outwit", "method": "query", "params": dict(params, finality="optimistic")}
-        req = urllib.request.Request(self.rpc, data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json", "User-Agent": "outwit/0.1"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            out = json.loads(r.read())
+        out = self._post({"jsonrpc": "2.0", "id": "outwit", "method": "query", "params": dict(params, finality="optimistic")})
         if "error" in out:
             raise RuntimeError(out["error"].get("data") or out["error"])
         if "error" in out["result"]:
@@ -60,7 +84,7 @@ class Chain:
         return {k["public_key"] for k in res["keys"]}
 
     def call(self, signer, key, contract, method, args, gas=30):
-        req = {"rpc": self.rpc, "account": signer, "key": key, "contract": contract,
+        req = {"rpc": self.rpc, "rpcs": self.rpcs, "account": signer, "key": key, "contract": contract,
                "method": method, "args": args, "gas": gas}
         try:
             proc = subprocess.run(["node", str(HERE / "chain" / "near.mjs")], input=json.dumps(req),
@@ -79,12 +103,33 @@ class Chain:
 class Vault:
     """One Outwit vault contract."""
 
-    def __init__(self, chain, vault_id):
+    def __init__(self, chain, vault_id, ttl=4.0):
         self.chain = chain
         self.id = vault_id
+        self.ttl = ttl
+        self._cache = {}
+        self._lock = threading.Lock()
 
-    def view(self, method, args=None):
-        return self.chain.view(self.id, method, args)
+    def view(self, method, args=None, fresh=False):
+        """Read the contract. The page, the guard and the agent share answers for `ttl`
+        seconds, which keeps a busy page well inside public RPC rate limits."""
+        key = (method, json.dumps(args, sort_keys=True))
+        with self._lock:
+            hit = self._cache.get(key)
+        if hit and not fresh and time.time() - hit[0] < self.ttl:
+            return hit[1]
+        value = self.chain.view(self.id, method, args)
+        with self._lock:
+            self._cache[key] = (time.time(), value)
+        return value
+
+    def invalidate(self):
+        with self._lock:
+            self._cache.clear()
+
+    def _write(self, res):
+        self.invalidate()
+        return res
 
     def config(self):
         return self.view("get_config")
@@ -102,31 +147,36 @@ class Vault:
         return self.view("get_proposals", {"limit": limit})
 
     def proposal(self, pid):
-        return self.view("get_proposal", {"id": pid})
+        return self.view("get_proposal", {"id": pid}, fresh=True)
 
     def pending(self):
-        return self.view("get_pending")
+        return self.view("get_pending", fresh=True)
 
     def incidents(self):
         return self.view("get_incidents")
 
     def keys(self):
-        return self.chain.keys(self.id)
+        hit = self._cache.get(("keys", ""))
+        if hit and time.time() - hit[0] < self.ttl:
+            return hit[1]
+        value = self.chain.keys(self.id)
+        self._cache[("keys", "")] = (time.time(), value)
+        return value
 
     def propose(self, agent_key, receiver_id, amount_yocto, invoice_id=None, memo=""):
         """Ask to pay, signed with the agent's own function-call key on the vault."""
-        return self.chain.call(self.id, agent_key, self.id, "propose",
-                               {"receiver_id": receiver_id, "amount": str(amount_yocto),
-                                "invoice_id": invoice_id, "memo": memo[:280]})
+        return self._write(self.chain.call(self.id, agent_key, self.id, "propose",
+                                           {"receiver_id": receiver_id, "amount": str(amount_yocto),
+                                            "invoice_id": invoice_id, "memo": memo[:280]}))
 
     def approve(self, guard, key, pid, reason):
-        return self.chain.call(guard, key, self.id, "approve", {"id": pid, "reason": reason[:280]})
+        return self._write(self.chain.call(guard, key, self.id, "approve", {"id": pid, "reason": reason[:280]}))
 
     def reject(self, guard, key, pid, reason):
-        return self.chain.call(guard, key, self.id, "reject", {"id": pid, "reason": reason[:280]})
+        return self._write(self.chain.call(guard, key, self.id, "reject", {"id": pid, "reason": reason[:280]}))
 
     def create_invoice(self, payee, key, amount_yocto, memo):
-        return self.chain.call(payee, key, self.id, "create_invoice", {"amount": str(amount_yocto), "memo": memo[:280]})
+        return self._write(self.chain.call(payee, key, self.id, "create_invoice", {"amount": str(amount_yocto), "memo": memo[:280]}))
 
 
 class SimVault:
@@ -197,6 +247,9 @@ class SimVault:
 
     def keys(self):
         return set(self._keys)
+
+    def invalidate(self):
+        pass
 
     # ----- calls -----
     def create_invoice(self, payee, key, amount_yocto, memo):

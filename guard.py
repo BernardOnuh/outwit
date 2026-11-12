@@ -161,7 +161,7 @@ class Guard:
                     continue
                 self.decide(v, p)
 
-    def loop(self, interval=1.5):
+    def loop(self, interval=3.0):
         while True:
             self.run_once()
             time.sleep(interval)
@@ -243,7 +243,7 @@ def load(config_path):
     """Read outwit.json, or the OUTWIT_CONFIG environment variable on a host where secrets live in the environment."""
     raw = os.environ.get("OUTWIT_CONFIG")
     cfg = json.loads(raw) if raw else json.loads(Path(config_path).read_text())
-    chain = vaultlib.Chain(cfg.get("rpc", "https://test.rpc.fastnear.com"), cfg.get("explorer", "https://testnet.nearblocks.io"))
+    chain = vaultlib.Chain(cfg.get("rpc"), cfg.get("explorer", "https://testnet.nearblocks.io"), rpcs=cfg.get("rpcs"))
     return cfg, chain
 
 
