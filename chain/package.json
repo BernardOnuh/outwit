@@ -2,7 +2,7 @@
   "name": "outwit-chain",
   "private": true,
   "type": "module",
-  "description": "Signs NEAR transactions for the Leash watchdog and demo agents",
+  "description": "Signs NEAR transactions for Outwit and sets up vaults",
   "dependencies": {
     "near-api-js": "7.4.0"
   }

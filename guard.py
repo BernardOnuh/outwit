@@ -20,6 +20,7 @@ HTTP API (also mounted by arena.py):
 """
 import argparse
 import json
+import os
 import re
 import threading
 import time
@@ -239,7 +240,9 @@ def make_handler(guard):
 
 
 def load(config_path):
-    cfg = json.loads(Path(config_path).read_text())
+    """Read outwit.json, or the OUTWIT_CONFIG environment variable on a host where secrets live in the environment."""
+    raw = os.environ.get("OUTWIT_CONFIG")
+    cfg = json.loads(raw) if raw else json.loads(Path(config_path).read_text())
     chain = vaultlib.Chain(cfg.get("rpc", "https://test.rpc.fastnear.com"), cfg.get("explorer", "https://testnet.nearblocks.io"))
     return cfg, chain
 

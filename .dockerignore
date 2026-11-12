@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+contract/target
+*.json
+!chain/package.json
+!chain/package-lock.json
+*.jsonl
+.env
+__pycache__
