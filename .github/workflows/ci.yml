@@ -28,5 +28,5 @@ jobs:
       - run: cargo build --target wasm32-unknown-unknown --release
       - uses: actions/upload-artifact@v4
         with:
-          name: leash_vault.wasm
-          path: contract/target/wasm32-unknown-unknown/release/leash_vault.wasm
+          name: outwit_vault.wasm
+          path: contract/target/wasm32-unknown-unknown/release/outwit_vault.wasm

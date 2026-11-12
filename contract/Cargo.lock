@@ -1112,13 +1112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "leash-vault"
-version = "0.1.0"
-dependencies = [
- "near-sdk",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,6 +1598,13 @@ dependencies = [
  "num-traits",
  "rand",
  "serde",
+]
+
+[[package]]
+name = "outwit-vault"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
 ]
 
 [[package]]

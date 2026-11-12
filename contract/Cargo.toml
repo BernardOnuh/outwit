@@ -1,8 +1,8 @@
 [package]
-name = "leash-vault"
+name = "outwit-vault"
 version = "0.1.0"
 edition = "2021"
-description = "Leash vault: on-chain spending limits and a kill switch for AI agents on NEAR"
+description = "Outwit vault: an AI agent proposes payments, a guard approves them, the contract enforces hard limits"
 license = "Apache-2.0"
 
 [lib]

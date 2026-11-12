@@ -1,11 +1,13 @@
-"""Talk to the Leash vault contract: live on NEAR, or simulated for --mock.
+"""Talk to an Outwit vault on NEAR.
 
-Both classes expose the same methods. Calls return the bridge's result shape,
-{"ok", "tx", "result", "logs"} or {"ok": False, "error"}, so callers never care
-which one they hold. SimVault mirrors contract/src/lib.rs rule for rule.
+`Chain` reads through NEAR RPC and signs through chain/near.mjs (Python's
+standard library has no ed25519). `Vault` wraps one vault contract. `SimVault`
+is an in-memory copy of contract/src/lib.rs for the test suite only; everything
+the product shows comes from the chain.
+
+Writes return the bridge's shape: {"ok", "tx", "result", "logs"} or {"ok": False, "error"}.
 """
 import base64
-import hashlib
 import json
 import secrets
 import subprocess
@@ -18,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 YOCTO = 10 ** 24
 MINUTE_MS = 60_000
 DAY_MS = 86_400_000
-MAX_INCIDENTS = 50
+PROPOSAL_TTL_MS = 15 * MINUTE_MS
 
 
 def to_yocto(near):
@@ -31,20 +33,15 @@ def fmt_near(yocto):
     return "%s NEAR" % ("{:f}".format(near) if near else "0")
 
 
-class LiveVault:
-    """The deployed contract. Views go straight to RPC; calls are signed by chain/near.mjs."""
+class Chain:
+    def __init__(self, rpc="https://test.rpc.fastnear.com", explorer="https://testnet.nearblocks.io"):
+        self.rpc = rpc
+        self.explorer = explorer
 
-    def __init__(self, cfg):
-        self.rpc = cfg["rpc"]
-        self.contract = cfg["vault"]
-        self.owner = cfg.get("owner") or {}
-        self.watchdog = cfg["watchdog"]
-        self.explorer = cfg.get("explorer", "https://testnet.nearblocks.io")
-
-    # ----- reads -----
     def _query(self, params):
-        body = {"jsonrpc": "2.0", "id": "leash", "method": "query", "params": dict(params, finality="optimistic")}
-        req = urllib.request.Request(self.rpc, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        body = {"jsonrpc": "2.0", "id": "outwit", "method": "query", "params": dict(params, finality="optimistic")}
+        req = urllib.request.Request(self.rpc, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json", "User-Agent": "outwit/0.1"})
         with urllib.request.urlopen(req, timeout=15) as r:
             out = json.loads(r.read())
         if "error" in out:
@@ -53,28 +50,17 @@ class LiveVault:
             raise RuntimeError(out["result"]["error"])
         return out["result"]
 
-    def view(self, method, args=None):
-        res = self._query({"request_type": "call_function", "account_id": self.contract, "method_name": method,
+    def view(self, contract, method, args=None):
+        res = self._query({"request_type": "call_function", "account_id": contract, "method_name": method,
                            "args_base64": base64.b64encode(json.dumps(args or {}).encode()).decode()})
         return json.loads(bytes(res["result"]))
 
-    def agents(self):
-        return self.view("get_agents")
-
-    def incidents(self):
-        return self.view("get_incidents")
-
-    def blocklist(self):
-        return self.view("get_blocklist")
-
-    def keys(self):
-        """Public keys on the vault account right now."""
-        res = self._query({"request_type": "view_access_key_list", "account_id": self.contract})
+    def keys(self, account):
+        res = self._query({"request_type": "view_access_key_list", "account_id": account})
         return {k["public_key"] for k in res["keys"]}
 
-    # ----- writes -----
-    def _call(self, signer, key, method, args, gas=30):
-        req = {"rpc": self.rpc, "account": signer, "key": key, "contract": self.contract,
+    def call(self, signer, key, contract, method, args, gas=30):
+        req = {"rpc": self.rpc, "account": signer, "key": key, "contract": contract,
                "method": method, "args": args, "gas": gas}
         try:
             proc = subprocess.run(["node", str(HERE / "chain" / "near.mjs")], input=json.dumps(req),
@@ -83,173 +69,217 @@ class LiveVault:
         except (OSError, subprocess.TimeoutExpired, ValueError, IndexError) as e:
             return {"ok": False, "error": "NEAR bridge failed: %s" % e}
 
-    def leash(self, name, reason):
-        return self._call(self.watchdog["account"], self.watchdog["key"], "leash", {"name": name, "reason": reason[:300]})
-
-    def block(self, account_id):
-        return self._call(self.watchdog["account"], self.watchdog["key"], "block_receiver", {"account_id": account_id})
-
-    def can_release(self):
-        return bool(self.owner.get("key"))
-
-    def release(self, name, new_public_key=None):
-        if not self.can_release():
-            return {"ok": False, "error": "no owner key configured: release from the owner's wallet"}
-        return self._call(self.owner["account"], self.owner["key"], "release",
-                          {"name": name, "new_public_key": new_public_key})
-
-    def pay(self, agent_key, receiver_id, amount_yocto, memo=""):
-        """Pay as an agent: signed with the agent's own function-call key on the vault."""
-        return self._call(self.contract, agent_key, "pay",
-                          {"receiver_id": receiver_id, "amount": str(amount_yocto), "memo": memo})
-
     def tx_url(self, tx):
         return "%s/txns/%s" % (self.explorer, tx) if tx else None
 
+    def account_url(self, account):
+        return "%s/address/%s" % (self.explorer, account)
+
+
+class Vault:
+    """One Outwit vault contract."""
+
+    def __init__(self, chain, vault_id):
+        self.chain = chain
+        self.id = vault_id
+
+    def view(self, method, args=None):
+        return self.chain.view(self.id, method, args)
+
+    def config(self):
+        return self.view("get_config")
+
+    def agents(self):
+        return self.view("get_agents")
+
+    def payees(self):
+        return self.view("get_payees")
+
+    def invoices(self, limit=100):
+        return self.view("get_invoices", {"limit": limit})
+
+    def proposals(self, limit=50):
+        return self.view("get_proposals", {"limit": limit})
+
+    def proposal(self, pid):
+        return self.view("get_proposal", {"id": pid})
+
+    def pending(self):
+        return self.view("get_pending")
+
+    def incidents(self):
+        return self.view("get_incidents")
+
+    def keys(self):
+        return self.chain.keys(self.id)
+
+    def propose(self, agent_key, receiver_id, amount_yocto, invoice_id=None, memo=""):
+        """Ask to pay, signed with the agent's own function-call key on the vault."""
+        return self.chain.call(self.id, agent_key, self.id, "propose",
+                               {"receiver_id": receiver_id, "amount": str(amount_yocto),
+                                "invoice_id": invoice_id, "memo": memo[:280]})
+
+    def approve(self, guard, key, pid, reason):
+        return self.chain.call(guard, key, self.id, "approve", {"id": pid, "reason": reason[:280]})
+
+    def reject(self, guard, key, pid, reason):
+        return self.chain.call(guard, key, self.id, "reject", {"id": pid, "reason": reason[:280]})
+
+    def create_invoice(self, payee, key, amount_yocto, memo):
+        return self.chain.call(payee, key, self.id, "create_invoice", {"amount": str(amount_yocto), "memo": memo[:280]})
+
 
 class SimVault:
-    """An in-memory vault with the contract's rules, for demos and tests."""
+    """The contract's rules in memory, for tests. Same views and calls as Vault."""
 
+    def __init__(self, vault_id="vault.sim", owner="owner.sim", guards=("guard.sim",), balance_near=20):
+        self.id = vault_id
+        self.owner = owner
+        self.guards = list(guards)
+        self.balance = to_yocto(balance_near)
+        self._agents, self._by_key, self._keys = {}, {}, set()
+        self._payees, self._invoices, self._proposals = {}, [], []
+        self.clock = lambda: int(time.time() * 1000)
+        self.chain = self
+
+    # Chain-ish helpers so callers can use vault.chain.tx_url(...)
     explorer = None
 
-    def __init__(self, contract="vault.sim", owner="owner.sim", guardians=("watchdog.sim",), balance_near=50):
-        self.contract = contract
-        self.owner_id = owner
-        self.guardians = list(guardians)
-        self.balance = to_yocto(balance_near)
-        self._agents = {}
-        self._by_key = {}
-        self._secrets = {}      # secret key -> public key, standing in for ed25519
-        self._keys = set()      # public keys on the vault account
-        self._blocklist = set()
-        self._incidents = []
-        self.transfers = []
-        self.clock = lambda: int(time.time() * 1000)
+    def tx_url(self, tx):
+        return None
+
+    def account_url(self, account):
+        return None
 
     @staticmethod
     def new_key():
-        secret = "ed25519:sim" + secrets.token_hex(16)
-        return "ed25519:" + hashlib.sha256(secret.encode()).hexdigest()[:44], secret
+        pk = "ed25519:sim" + secrets.token_hex(16)
+        return pk, "secret:" + pk
 
-    def _tx(self, result=None, logs=()):
-        return {"ok": True, "tx": "sim-" + secrets.token_hex(8), "result": result, "logs": list(logs)}
+    def _tx(self, result=None):
+        return {"ok": True, "tx": "sim-" + secrets.token_hex(6), "result": result, "logs": []}
 
-    def _fail(self, error):
-        return {"ok": False, "error": error}
-
-    def add_agent(self, name, public_key, secret_key, policy):
-        assert name not in self._agents and public_key not in self._by_key
-        self._secrets[secret_key] = public_key
+    def add_agent(self, name, public_key, policy):
         self._by_key[public_key] = name
-        self._agents[name] = {
-            "name": name, "public_key": public_key, "policy": dict(policy), "leashed": None, "leashed_by": None,
-            "day": self.clock() // DAY_MS, "spent_today": "0", "total_spent": "0", "payments": 0, "recent": []}
         self._keys.add(public_key)
+        self._agents[name] = {"name": name, "public_key": public_key, "policy": dict(policy), "leashed": None,
+                              "leashed_by": None, "day": self.clock() // DAY_MS, "spent_today": "0",
+                              "total_spent": "0", "payments": 0, "recent": []}
 
-    # ----- reads -----
+    def add_payee(self, account_id, label):
+        self._payees[account_id] = {"account_id": account_id, "label": label, "added_ms": self.clock()}
+
+    # ----- views -----
+    def config(self):
+        return {"owner": self.owner, "guards": self.guards, "available": str(self.balance),
+                "proposals": len(self._proposals), "invoices": len(self._invoices)}
+
     def agents(self):
-        return [json.loads(json.dumps(a)) for a in self._agents.values()]
+        return json.loads(json.dumps(list(self._agents.values())))
+
+    def payees(self):
+        return list(self._payees.values())
+
+    def invoices(self, limit=100):
+        return [dict(i) for i in self._invoices[-limit:]][::-1]
+
+    def proposals(self, limit=50):
+        return [dict(p) for p in self._proposals[-limit:]][::-1]
+
+    def proposal(self, pid):
+        return dict(self._proposals[pid]) if 0 <= pid < len(self._proposals) else None
+
+    def pending(self):
+        return [dict(p) for p in self._proposals if p["status"] == "Pending"]
 
     def incidents(self):
-        return list(self._incidents)
-
-    def blocklist(self):
-        return sorted(self._blocklist)
+        return []
 
     def keys(self):
         return set(self._keys)
 
-    # ----- writes -----
-    def _trip(self, name, reason, by):
-        a = self._agents[name]
-        if a["leashed"]:
-            return
-        a["leashed"], a["leashed_by"] = reason, by
-        self._incident(name, "leashed", reason, by)
-        self._keys.discard(a["public_key"])
+    # ----- calls -----
+    def create_invoice(self, payee, key, amount_yocto, memo):
+        if payee not in self._payees:
+            return {"ok": False, "error": "Smart contract panicked: only approved payees can raise invoices"}
+        iid = len(self._invoices)
+        self._invoices.append({"id": iid, "payee": payee, "amount": str(amount_yocto), "memo": memo,
+                               "status": "Open", "created_ms": self.clock(), "paid_by": None})
+        return self._tx(iid)
 
-    def _incident(self, name, kind, reason, by):
-        self._incidents.append({"agent": name, "kind": kind, "reason": reason, "by": by, "at_ms": self.clock()})
-        del self._incidents[:-MAX_INCIDENTS]
-
-    def leash(self, name, reason, by=None):
-        by = by or self.guardians[0]
-        if by != self.owner_id and by not in self.guardians:
-            return self._fail("Smart contract panicked: only the owner or a guardian may leash")
-        if name not in self._agents:
-            return self._fail("Smart contract panicked: no such agent")
-        self._trip(name, reason[:300], by)
-        return self._tx()
-
-    def block(self, account_id, by=None):
-        self._blocklist.add(account_id)
-        return self._tx()
-
-    def can_release(self):
-        return True
-
-    def release(self, name, new_public_key=None, by=None):
-        if (by or self.owner_id) != self.owner_id:
-            return self._fail("Smart contract panicked: only the owner may do this")
-        a = self._agents.get(name)
-        if not a:
-            return self._fail("Smart contract panicked: no such agent")
-        if not a["leashed"]:
-            return self._fail("Smart contract panicked: agent is not leashed")
-        was = a["leashed"]
-        a["leashed"] = a["leashed_by"] = None
-        a["recent"] = []
-        if new_public_key and new_public_key != a["public_key"]:
-            del self._by_key[a["public_key"]]
-            self._by_key[new_public_key] = name
-            a["public_key"] = new_public_key
-        self._incident(name, "released", "released by the owner (was: %s)" % was, self.owner_id)
-        self._keys.add(a["public_key"])
-        return self._tx()
-
-    def pay(self, agent_key, receiver_id, amount_yocto, memo=""):
-        pk = self._secrets.get(agent_key)
+    def propose(self, agent_key, receiver_id, amount_yocto, invoice_id=None, memo=""):
+        pk = agent_key[len("secret:"):] if agent_key.startswith("secret:") else None
         if pk not in self._keys:
-            # The chain rejects the transaction before the contract ever runs.
-            return self._fail("Transaction rejected: access key %s does not exist on %s" % (pk or "?", self.contract))
-        name = self._by_key.get(pk)
-        if not name:
-            return self._fail("Smart contract panicked: unknown agent key")
-        amount = int(amount_yocto)
-        if amount <= 0:
-            return self._fail("Smart contract panicked: amount must be positive")
-        if amount > self.balance:
-            return self._fail("Smart contract panicked: vault balance too low")
-        a, p, now = self._agents[name], self._agents[name]["policy"], self.clock()
+            return {"ok": False, "error": "Access key %s does not exist" % pk}
+        name = self._by_key[pk]
+        a, now, amount = self._agents[name], self.clock(), int(amount_yocto)
         if a["leashed"]:
-            return self._fail("Smart contract panicked: agent is leashed: %s" % a["leashed"])
+            return {"ok": False, "error": "Smart contract panicked: agent is leashed: %s" % a["leashed"]}
         if a["day"] != now // DAY_MS:
             a["day"], a["spent_today"] = now // DAY_MS, "0"
         a["recent"] = [t for t in a["recent"] if now - t < MINUTE_MS]
-        spent, cap, daily = int(a["spent_today"]), int(p["max_per_payment"]), int(p["daily_limit"])
-        allowed = p.get("allowed_receivers")
-        if receiver_id in self._blocklist:
-            reason = "scam blocklist: %s is flagged" % receiver_id
-        elif allowed is not None and receiver_id not in allowed:
-            reason = "receiver not allowed: %s" % receiver_id
-        elif amount > cap:
-            reason = "over per-payment cap: %s > %s" % (fmt_near(amount), fmt_near(cap))
-        elif spent + amount > daily:
-            reason = "over daily limit: %s spent + %s > %s" % (fmt_near(spent), fmt_near(amount), fmt_near(daily))
-        elif len(a["recent"]) >= int(p["max_payments_per_minute"]):
-            reason = "payment loop: %d payments in the last minute" % (len(a["recent"]) + 1)
+        p = a["policy"]
+        if p.get("payees_only") and receiver_id not in self._payees:
+            reason = "not an approved payee: %s" % receiver_id
+        elif amount > int(p["max_per_payment"]):
+            reason = "over per-payment cap: %s > %s" % (fmt_near(amount), fmt_near(p["max_per_payment"]))
+        elif int(a["spent_today"]) + amount > int(p["daily_limit"]):
+            reason = "over daily limit"
+        elif len(a["recent"]) >= int(p["max_proposals_per_minute"]):
+            reason = "proposal loop: %d proposals in the last minute" % (len(a["recent"]) + 1)
         else:
             reason = None
+        if not reason:
+            a["recent"].append(now)
+        pid = len(self._proposals)
+        self._proposals.append({"id": pid, "agent": name, "receiver_id": receiver_id, "amount": str(amount),
+                                "invoice_id": invoice_id, "memo": memo, "status": "Refused" if reason else "Pending",
+                                "reason": reason, "decided_by": self.id if reason else None, "created_ms": now,
+                                "decided_ms": now if reason else None})
         if reason:
-            self._trip(name, reason, self.contract)
-            return self._tx({"paid": False, "leashed": reason})
-        a["recent"].append(now)
-        a["spent_today"] = str(spent + amount)
+            a["leashed"], a["leashed_by"] = reason, self.id
+            self._keys.discard(pk)
+        return self._tx({"id": pid, "status": "Refused" if reason else "Pending", "reason": reason})
+
+    def _decide(self, pid, status, reason, by):
+        p = self._proposals[pid]
+        p.update(status=status, reason=reason, decided_by=by, decided_ms=self.clock())
+
+    def approve(self, guard, key, pid, reason):
+        if guard not in self.guards and guard != self.owner:
+            return {"ok": False, "error": "Smart contract panicked: only the owner or a guard may do this"}
+        p = self._proposals[pid]
+        if p["status"] != "Pending":
+            return {"ok": False, "error": "Smart contract panicked: proposal is not pending"}
+        amount = int(p["amount"])
+        problem = None
+        if self.clock() - p["created_ms"] > PROPOSAL_TTL_MS:
+            problem = "expired: no guard decided within 15 minutes"
+        elif amount > self.balance:
+            problem = "vault balance too low"
+        if p["invoice_id"] is not None:
+            inv = self._invoices[p["invoice_id"]]
+            if inv["status"] != "Open":
+                problem = problem or "invoice %d is not open" % inv["id"]
+            elif inv["payee"] != p["receiver_id"] or int(inv["amount"]) != amount:
+                problem = problem or "does not match invoice %d" % inv["id"]
+        if problem:
+            self._decide(pid, "Expired", problem, guard)
+            return self._tx("Expired")
+        a = self._agents[p["agent"]]
+        a["spent_today"] = str(int(a["spent_today"]) + amount)
         a["total_spent"] = str(int(a["total_spent"]) + amount)
         a["payments"] += 1
+        if p["invoice_id"] is not None:
+            self._invoices[p["invoice_id"]].update(status="Paid", paid_by=pid)
         self.balance -= amount
-        self.transfers.append((name, receiver_id, amount, memo))
-        return self._tx({"paid": True, "leashed": None})
+        self._decide(pid, "Paid", reason, guard)
+        return self._tx("Paid")
 
-    def tx_url(self, tx):
-        return None
+    def reject(self, guard, key, pid, reason):
+        if guard not in self.guards and guard != self.owner:
+            return {"ok": False, "error": "Smart contract panicked: only the owner or a guard may do this"}
+        if self._proposals[pid]["status"] != "Pending":
+            return {"ok": False, "error": "Smart contract panicked: proposal is not pending"}
+        self._decide(pid, "Rejected", reason, guard)
+        return self._tx()

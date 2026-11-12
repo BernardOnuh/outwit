@@ -4,6 +4,8 @@ __pycache__/
 node_modules/
 contract/target/
 arena*.json
+outwit.json
+decisions.jsonl
 attempts.jsonl
 attempts-mock.jsonl
 .env

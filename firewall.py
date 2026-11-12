@@ -216,6 +216,10 @@ def check(proposal, ctx, now=None):
     named = next((i for i in ctx.invoices if i["id"] == proposal.get("invoice")), None)
     if named and named.get("status") == "paid":
         add("duplicate_invoice", "high", "Invoice %s is already paid; paying it again is a duplicate payment." % named["id"])
+    if named and named["vendor"] != to:
+        add("invoice_redirect", "critical", "Invoice %s was raised by %s, but the money would go to %s." % (named["id"], named["vendor"], to))
+    if proposal.get("invoice") is not None and not named:
+        add("unknown_invoice", "high", "Invoice %s does not exist on-chain." % proposal["invoice"])
 
     total_near = 0
     for receiver, yocto, token, raw in outgoing(proposal, ctx):
