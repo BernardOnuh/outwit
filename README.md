@@ -81,7 +81,9 @@ echo 'LLM_MODEL=deepseek-ai/DeepSeek-V3.1' >> .env
 python3 arena.py
 ```
 
-Without a key, the scripted Keeper is used.
+Groq's free tier works too: `LLM_BASE_URL=https://api.groq.com/openai/v1` and `LLM_MODEL=openai/gpt-oss-120b`.
+
+Without a key, or whenever the model is unreachable, the scripted Keeper answers instead, and the page says so.
 
 ## Seen on testnet
 

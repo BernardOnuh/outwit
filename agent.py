@@ -126,7 +126,9 @@ def proposal_for(tool, args, world):
 def llm_chat(messages):
     body = {"model": LLM_MODEL, "messages": messages, "tools": tool_schemas(), "temperature": 0.3}
     req = urllib.request.Request(LLM_URL + "/chat/completions", data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + LLM_KEY})
+                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + LLM_KEY,
+                                          # Some providers' CDNs refuse Python's default User-Agent.
+                                          "User-Agent": "outwit/0.1"})
     with urllib.request.urlopen(req, timeout=90) as r:
         return json.loads(r.read())["choices"][0]["message"]
 
