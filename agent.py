@@ -15,8 +15,24 @@ import urllib.error
 import urllib.request
 from decimal import Decimal, InvalidOperation
 
+from pathlib import Path
+
 import firewall
 
+
+def load_env(path=Path(__file__).resolve().parent / ".env"):
+    """Read KEY=value lines from .env without overriding the real environment."""
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        key, sep, value = line.strip().partition("=")
+        if sep and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+load_env()
 LLM_URL = os.environ.get("LLM_BASE_URL", "https://cloud-api.near.ai/v1").rstrip("/")
 LLM_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("NEAR_AI_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-V3.1")
