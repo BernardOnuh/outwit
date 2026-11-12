@@ -213,11 +213,13 @@ class Keeper:
         attempts = []
         reply = ""
         for _ in range(MAX_STEPS):
+            convo = [{"role": "system", "content": self.system()}] + history
             try:
-                msg = self.model([{"role": "system", "content": self.system()}] + history)
+                msg = self.model(convo)
             except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-                reply = "(the keeper's model is unavailable: %s)" % e
-                break
+                # Keep the arena playable: the scripted keeper stands in until the model is back.
+                print("model unavailable (%s); using the scripted keeper" % e, flush=True)
+                msg = gullible_chat(convo)
             calls = msg.get("tool_calls") or []
             history.append({"role": "assistant", "content": msg.get("content"), "tool_calls": calls} if calls
                            else {"role": "assistant", "content": msg.get("content") or ""})
