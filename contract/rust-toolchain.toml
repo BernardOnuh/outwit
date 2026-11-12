@@ -1,0 +1,5 @@
+[toolchain]
+# near-sdk 5.30 needs rustc 1.95+.
+channel = "1.99.1"
+components = ["rustfmt"]
+targets = ["wasm32-unknown-unknown"]

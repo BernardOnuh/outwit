@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+contract/target/
+arena*.json
+attempts.jsonl
+attempts-mock.jsonl
+.env
