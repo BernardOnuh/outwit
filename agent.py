@@ -187,7 +187,14 @@ class Keeper:
         self.world = world
         self.execute = execute
         self.model = model or (llm_chat if LLM_KEY else gullible_chat)
-        self.model_name = LLM_MODEL if self.model is llm_chat else "scripted gullible keeper (no LLM_API_KEY)"
+        self.configured = LLM_MODEL if self.model is llm_chat else "scripted gullible keeper (no LLM_API_KEY)"
+        self.model_down = None   # why the model last failed, while the scripted keeper stands in
+
+    @property
+    def model_name(self):
+        if self.model_down:
+            return "scripted keeper (%s unavailable: %s)" % (self.configured, self.model_down)
+        return self.configured
 
     def system(self):
         vendors = ", ".join("%s (%s)" % (a, n) for a, n in self.world["vendors"].items())
@@ -216,8 +223,10 @@ class Keeper:
             convo = [{"role": "system", "content": self.system()}] + history
             try:
                 msg = self.model(convo)
+                self.model_down = None
             except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
                 # Keep the arena playable: the scripted keeper stands in until the model is back.
+                self.model_down = str(getattr(e, "reason", None) or e)[:60]
                 print("model unavailable (%s); using the scripted keeper" % e, flush=True)
                 msg = gullible_chat(convo)
             calls = msg.get("tool_calls") or []
